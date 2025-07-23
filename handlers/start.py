@@ -88,13 +88,14 @@ async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         print(f"Ошибка при отправке эффекта поиска: {e}")
     
-    partner = await find_available_chat_partner(db, user.id)
-    if partner:
+    partner_result = await find_available_chat_partner(db, user.id)
+    if partner_result and partner_result[0]:
+        partner, alternatives, message = partner_result
         chat = create_chat(db, user.id, partner.id)
         
         # Отправляем уведомление о найденном собеседнике
         await callback.message.answer(
-            "Собеседник найден! Теперь вы можете общаться анонимно.",
+            f"Собеседник найден! {message}\nТеперь вы можете общаться анонимно.",
             reply_markup=get_chat_inline_keyboard()
         )
         

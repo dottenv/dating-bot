@@ -7,41 +7,70 @@ from utils.debug import dbg
 
 def is_compatible_orientation(user1: User, user2: User) -> bool:
     """
-    Проверяет совместимость пола и ориентации между двумя пользователями
+    Проверяет совместимость пола, ориентации и цели знакомства между двумя пользователями
     """
+    dbg(f"Проверка совместимости между {user1.first_name} (пол: {user1.gender}, ориентация: {user1.orientation}) и "
+         f"{user2.first_name} (пол: {user2.gender}, ориентация: {user2.orientation})", "CHAT")
+    
+    # Проверка цели знакомства
+    # Если у пользователя цель "дружба" или "общение", то пол и ориентация не важны
+    try:
+        if hasattr(user1, 'dating_goal') and user1.dating_goal:
+            if user1.dating_goal.lower() in ['дружба', 'общение']:
+                dbg(f"Цель знакомства {user1.first_name} - {user1.dating_goal}, пол и ориентация не важны", "CHAT")
+                return True
+    except AttributeError:
+        # Если столбец еще не добавлен в БД, игнорируем проверку цели знакомства
+        dbg("Столбец dating_goal еще не добавлен в БД, игнорируем проверку цели знакомства", "CHAT")
+    
     # По умолчанию, если нет данных о поле или ориентации, считаем совместимыми
     if not user1.gender or not user2.gender or not user1.orientation or not user2.orientation:
+        dbg("Нет данных о поле или ориентации, считаем совместимыми", "CHAT")
         return True
     
     # Для гетеросексуалов: противоположный пол
     if user1.orientation.lower() == 'гетеро':
         # Если пользователь мужчина, ищем женщину
         if user1.gender.lower() == 'мужской':
-            return user2.gender.lower() == 'женский'
+            compatible = user2.gender.lower() == 'женский'
+            dbg(f"Пользователь {user1.first_name} - гетеро мужчина, совместимость: {compatible}", "CHAT")
+            return compatible
         # Если пользователь женщина, ищем мужчину
         elif user1.gender.lower() == 'женский':
-            return user2.gender.lower() == 'мужской'
+            compatible = user2.gender.lower() == 'мужской'
+            dbg(f"Пользователь {user1.first_name} - гетеро женщина, совместимость: {compatible}", "CHAT")
+            return compatible
     
     # Для гомосексуалов: тот же пол
     elif user1.orientation.lower() == 'гомо':
-        return user1.gender.lower() == user2.gender.lower()
+        compatible = user1.gender.lower() == user2.gender.lower()
+        dbg(f"Пользователь {user1.first_name} - гомо, совместимость: {compatible}", "CHAT")
+        return compatible
     
     # Для бисексуалов: любой пол, но нужно проверить совместимость с ориентацией второго пользователя
     elif user1.orientation.lower() == 'би':
         # Если второй пользователь гетеро, то полы должны быть противоположными
         if user2.orientation.lower() == 'гетеро':
             if user2.gender.lower() == 'мужской':
-                return user1.gender.lower() == 'женский'
+                compatible = user1.gender.lower() == 'женский'
+                dbg(f"Пользователь {user1.first_name} - би, а {user2.first_name} - гетеро мужчина, совместимость: {compatible}", "CHAT")
+                return compatible
             elif user2.gender.lower() == 'женский':
-                return user1.gender.lower() == 'мужской'
+                compatible = user1.gender.lower() == 'мужской'
+                dbg(f"Пользователь {user1.first_name} - би, а {user2.first_name} - гетеро женщина, совместимость: {compatible}", "CHAT")
+                return compatible
         # Если второй пользователь гомо, то полы должны совпадать
         elif user2.orientation.lower() == 'гомо':
-            return user1.gender.lower() == user2.gender.lower()
+            compatible = user1.gender.lower() == user2.gender.lower()
+            dbg(f"Пользователь {user1.first_name} - би, а {user2.first_name} - гомо, совместимость: {compatible}", "CHAT")
+            return compatible
         # Если второй пользователь тоже би, то совместимы в любом случае
         elif user2.orientation.lower() == 'би':
+            dbg(f"Оба пользователя бисексуальны, совместимы", "CHAT")
             return True
     
     # По умолчанию, если не попали ни в одно из условий
+    dbg(f"Не удалось определить совместимость, считаем несовместимыми", "CHAT")
     return False
 
 async def find_available_chat_partner(db: Session, user_id: int) -> Tuple[Optional[User], List[User], str]:
@@ -103,6 +132,13 @@ async def find_available_chat_partner(db: Session, user_id: int) -> Tuple[Option
             'orientation': current_user.orientation
         }
         
+        # Проверяем наличие столбца dating_goal в БД
+        try:
+            current_user_data['dating_goal'] = current_user.dating_goal if current_user.dating_goal else 'Не указана'
+        except AttributeError:
+            current_user_data['dating_goal'] = 'Не указана'
+            dbg("Столбец dating_goal еще не добавлен в БД", "CHAT")
+        
         # Фильтрация кандидатов по полу и ориентации
         filtered_users = []
         for user in available_users:
@@ -121,7 +157,7 @@ async def find_available_chat_partner(db: Session, user_id: int) -> Tuple[Option
 
         candidates = []
         for user in filtered_users:
-            candidates.append({
+            candidate_data = {
                 'id': user.id,
                 'first_name': user.first_name,
                 'age': user.age,
@@ -130,7 +166,15 @@ async def find_available_chat_partner(db: Session, user_id: int) -> Tuple[Option
                 'tags': user.tags,
                 'gender': user.gender,
                 'orientation': user.orientation
-            })
+            }
+            
+            # Проверяем наличие столбца dating_goal в БД
+            try:
+                candidate_data['dating_goal'] = user.dating_goal if user.dating_goal else 'Не указана'
+            except AttributeError:
+                candidate_data['dating_goal'] = 'Не указана'
+            
+            candidates.append(candidate_data)
             dbg(f"Кандидат: {user.first_name}, ID: {user.id}", "CHAT")
 
         # Find best match using AI
