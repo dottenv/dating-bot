@@ -19,12 +19,38 @@ def create_user(db: Session, tg_id: int, username: str, first_name: str, last_na
     return user
 
 def update_user_profile(db: Session, user: User, **kwargs) -> User:
+    # Проверяем, что user является объектом User
+    if not user or not hasattr(user, 'id'):
+        raise ValueError("User object is invalid")
+        
     for key, value in kwargs.items():
         if hasattr(user, key):
-            setattr(user, key, value)
+            # Проверка типа для полей, которые должны быть определенного типа
+            if key == 'age':
+                if isinstance(value, str) and value.isdigit():
+                    value = int(value)
+                elif not isinstance(value, int):
+                    continue  # Пропускаем неверный тип
+                    
+            # Проверка на None и пустую строку
+            if value is not None and value != '':
+                try:
+                    setattr(user, key, value)
+                except Exception as e:
+                    print(f"Error setting {key}={value}: {e}")
     
-    db.commit()
-    db.refresh(user)
+    try:
+        # Проверяем полноту профиля после обновления
+        from services.user_rating_service import update_profile_completeness
+        update_profile_completeness(db, user)
+        
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        print(f"Error committing changes: {e}")
+        raise
+        
     return user
 
 def toggle_user_activity(db: Session, user: User) -> User:

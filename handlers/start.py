@@ -4,9 +4,10 @@ from aiogram.fsm.context import FSMContext
 
 from database.db import get_db
 from services.user_service import get_user_by_tg_id, create_user
-from keyboards.inline import get_main_inline_keyboard, get_gender_inline_keyboard
-from states.user_states import UserRegistration
+from keyboards.inline import get_main_inline_keyboard, get_gender_inline_keyboard, get_chat_inline_keyboard
+from states.user_states import UserRegistration, AnonymousChatting
 from utils.debug import dbg
+from services.chat_service import get_active_chat, end_chat
 
 router = Router()
 
@@ -47,19 +48,32 @@ async def cmd_start(message: types.Message, state: FSMContext):
             reply_markup=get_main_inline_keyboard()
         )
 
-# Обработчик для кнопки "Найти собеседника" в главном меню
+# Обработчик для кнопки "Найти собеседника" в главном меню и команды /find
 @router.callback_query(lambda c: c.data == "find_chat")
-async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
-    await callback.answer()
-    dbg(f"Получен запрос на поиск собеседника от пользователя {callback.from_user.id}", "START")
+@router.message(Command("find"))
+async def find_chat_callback(message_or_callback: types.Message | types.CallbackQuery, state: FSMContext):
+    # Определяем, это сообщение или callback
+    is_callback = isinstance(message_or_callback, types.CallbackQuery)
+    if is_callback:
+        await message_or_callback.answer()
+        callback = message_or_callback
+        message = callback.message
+        user_id = callback.from_user.id
+        bot = callback.bot
+    else:
+        message = message_or_callback
+        user_id = message.from_user.id
+        bot = message.bot
+        callback = None
+    dbg(f"Получен запрос на поиск собеседника от пользователя {user_id}", "START")
     
     # Вместо перенаправления на обработчик в chat.py, реализуем логику здесь
     db = next(get_db())
-    user = get_user_by_tg_id(db, callback.from_user.id)
+    user = get_user_by_tg_id(db, user_id)
 
     if not user:
-        dbg(f"Пользователь {callback.from_user.id} не найден", "START")
-        await callback.message.answer("Пожалуйста, сначала зарегистрируйтесь с помощью команды /start")
+        dbg(f"Пользователь {user_id} не найден", "START")
+        await message.answer("Пожалуйста, сначала зарегистрируйтесь с помощью команды /start")
         return
 
     # Импортируем необходимые функции
@@ -70,7 +84,7 @@ async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
     active_chat = get_active_chat(db, user.id)
     if active_chat:
         dbg(f"У пользователя {user.id} уже есть активный чат ID: {active_chat.id}", "START")
-        await callback.message.answer(
+        await message.answer(
             "Ты уже находишься в чате. Используй эти кнопки для управления:",
             reply_markup=get_chat_inline_keyboard()
         )
@@ -80,26 +94,56 @@ async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
 
     try:
         # Показываем эффект поиска
-        await callback.bot.send_chat_action(callback.from_user.id, "typing")
+        await bot.send_chat_action(user_id, "typing")
         
         # Импортируем asyncio для задержки
         import asyncio
-        await asyncio.sleep(1.0)  # Имитация поиска
+        
+        # Отправляем сообщение о прогрессе поиска
+        if is_callback:
+            progress_message = await message.edit_text(
+                "Поиск собеседника: анализ профилей... [10%]"
+            )
+        else:
+            progress_message = await message.answer(
+                "Поиск собеседника: анализ профилей... [10%]"
+            )
+        await asyncio.sleep(0.5)
+        
+        await progress_message.edit_text(
+            "Поиск собеседника: подбор по интересам... [30%]"
+        )
+        await asyncio.sleep(0.5)
+        
+        await progress_message.edit_text(
+            "Поиск собеседника: оценка совместимости... [60%]"
+        )
+        await asyncio.sleep(0.5)
+        
+        await progress_message.edit_text(
+            "Поиск собеседника: установка соединения... [90%]"
+        )
+        await asyncio.sleep(0.5)
     except Exception as e:
         print(f"Ошибка при отправке эффекта поиска: {e}")
     
     partner_result = await find_available_chat_partner(db, user.id)
     if partner_result and partner_result[0]:
-        partner, alternatives, message = partner_result
+        partner, alternatives, message_text = partner_result
         chat = create_chat(db, user.id, partner.id)
         
-        # Отправляем уведомление о найденном собеседнике
-        await callback.message.answer(
-            f"Собеседник найден! {message}\nТеперь вы можете общаться анонимно.",
-            reply_markup=get_chat_inline_keyboard()
-        )
+        # Отправляем уведомление о найденном собеседнике (без индекса совместимости)
+        if is_callback:
+            await progress_message.edit_text(
+                "Собеседник найден! Теперь вы можете общаться анонимно.",
+                reply_markup=get_chat_inline_keyboard()
+            )
+        else:
+            await progress_message.edit_text(
+                "Собеседник найден! Теперь вы можете общаться анонимно.",
+                reply_markup=get_chat_inline_keyboard()
+            )
         
-        bot = callback.bot
         try:
             # Показываем эффект набора текста партнеру
             await bot.send_chat_action(partner.tg_id, "typing")
@@ -115,7 +159,7 @@ async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
             )
         except Exception as e:
             print(f"Ошибка при отправке сообщения партнеру: {e}")
-            await callback.message.answer(
+            await message.answer(
                 "Произошла ошибка при уведомлении собеседника. Попробуйте еще раз."
             )
             return
@@ -124,11 +168,11 @@ async def find_chat_callback(callback: types.CallbackQuery, state: FSMContext):
         await state.update_data(chat_id=chat.id, partner_id=partner.id)
     else:
         # Показываем анимацию поиска
-        await callback.message.answer(
+        await progress_message.edit_text(
             "Ищем собеседника... Пожалуйста, подожди."
         )
         # Добавляем кнопку для отмены поиска
-        await callback.message.answer(
+        await message.answer(
             "Вернуться в главное меню:",
             reply_markup=get_main_inline_keyboard()
         )

@@ -11,6 +11,9 @@ class UserRegistration(StatesGroup):
     tags = State()
 
 class AnonymousChatting(StatesGroup):
-    waiting = State()
-    chatting = State()
-    deanon_request = State()
+    waiting = State()     # Ожидание собеседника
+    confirming = State()  # Подтверждение чата с пользователем с низким рейтингом
+    chatting = State()    # Активный чат
+    deanon_request = State()  # Запрос на раскрытие личности
+
+# Состояния для жалоб удалены, так как они больше не нужны

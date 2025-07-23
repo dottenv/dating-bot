@@ -19,7 +19,12 @@ async def process_first_name(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, first_name=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, first_name=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
         
         await message.answer(f"Имя успешно обновлено на: {message.text}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -46,7 +51,12 @@ async def process_age(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, age=age)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, age=age)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
         
         await message.answer(f"Возраст успешно обновлен на: {age}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -75,7 +85,13 @@ async def process_gender_choice(callback: types.CallbackQuery, state: FSMContext
         if edit_mode:
             db = next(get_db())
             user = get_user_by_tg_id(db, callback.from_user.id)
-            update_user_profile(db, user, gender=gender)
+            
+            # Проверяем, что user является объектом User
+            if user and hasattr(user, 'id'):
+                update_user_profile(db, user, gender=gender)
+            else:
+                await callback.message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+                return
             
             await callback.message.answer(f"Пол успешно обновлен на: {gender}")
             await callback.message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -105,7 +121,13 @@ async def process_orientation_choice(callback: types.CallbackQuery, state: FSMCo
         if edit_mode:
             db = next(get_db())
             user = get_user_by_tg_id(db, callback.from_user.id)
-            update_user_profile(db, user, orientation=orientation)
+            
+            # Проверяем, что user является объектом User
+            if user and hasattr(user, 'id'):
+                update_user_profile(db, user, orientation=orientation)
+            else:
+                await callback.message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+                return
             
             await callback.message.answer(f"Ориентация успешно обновлена на: {orientation}")
             await callback.message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -123,7 +145,13 @@ async def process_gender(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, gender=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, gender=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer(f"Пол успешно обновлен на: {message.text}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -141,7 +169,13 @@ async def process_orientation(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, orientation=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, orientation=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer(f"Ориентация успешно обновлена на: {message.text}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -159,7 +193,13 @@ async def process_city(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, city=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, city=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer(f"Город успешно обновлен на: {message.text}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -177,7 +217,13 @@ async def process_bio(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, bio=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, bio=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer("Информация о себе успешно обновлена")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -196,7 +242,13 @@ async def process_photo(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, photo_id=photo_id)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, photo_id=photo_id)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer("Фотография успешно обновлена")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -218,7 +270,13 @@ async def process_tags(message: types.Message, state: FSMContext):
     if edit_mode:
         db = next(get_db())
         user = get_user_by_tg_id(db, message.from_user.id)
-        update_user_profile(db, user, tags=message.text)
+        
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db, user, tags=message.text)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
+            return
         
         await message.answer(f"Интересы успешно обновлены на: {message.text}")
         await message.answer("Хочешь изменить что-то еще?", reply_markup=get_profile_edit_keyboard())
@@ -237,9 +295,17 @@ async def process_tags(message: types.Message, state: FSMContext):
         update_params = {}
         for field in ['first_name', 'age', 'gender', 'orientation', 'city', 'bio', 'photo_id', 'tags']:
             if field in data:
-                update_params[field] = data[field]
+                # Преобразуем возраст в число, если это строка
+                if field == 'age' and isinstance(data[field], str) and data[field].isdigit():
+                    update_params[field] = int(data[field])
+                else:
+                    update_params[field] = data[field]
         
-        update_user_profile(db=db, user=user, **update_params)
+        # Проверяем, что user является объектом User
+        if user and hasattr(user, 'id'):
+            update_user_profile(db=db, user=user, **update_params)
+        else:
+            await message.answer("Ошибка при обновлении профиля. Попробуйте еще раз.")
         
         await message.answer(
             "Отлично! Твой профиль заполнен. Теперь ты можешь начать общение.",

@@ -1,25 +1,29 @@
 import asyncio
 import datetime
+import time
+from typing import Optional, Tuple
 
 from aiogram import types, Router, F
 from aiogram.fsm.context import FSMContext
 
 from database.db import get_db
-from database.models import User
+from database.models import User, AnonymousChat
 from services.user_service import get_user_by_tg_id
 from services.chat_service import (
     find_available_chat_partner, create_chat, get_active_chat,
-    end_chat, create_deanon_request, get_deanon_request, update_deanon_approval,
-    increment_messages_count
+    end_chat, create_deanon_request, get_deanon_request, update_deanon_approval
 )
-from keyboards.inline import get_chat_inline_keyboard, get_deanon_keyboard, get_main_inline_keyboard, get_profile_edit_keyboard, get_cancel_search_keyboard
+from keyboards.inline import (
+    get_chat_inline_keyboard, get_deanon_keyboard, get_main_inline_keyboard, 
+    get_profile_edit_keyboard, get_cancel_search_keyboard, get_confirm_chat_keyboard,
+    FIND_CHAT, END_CHAT, REQUEST_DEANON, CHAT_INFO, REPORT_USER,
+    DEANON_APPROVE, DEANON_REJECT, CANCEL_SEARCH, CONFIRM_CHAT, REJECT_CHAT
+)
 from states.user_states import AnonymousChatting
 from utils.debug import dbg
+from handlers.chat_message_handler import process_chat_message, clear_message_mapping_for_chat
 
 router = Router()
-
-# Глобальный словарь для хранения соответствия ID сообщений
-message_mapping = {}
 
 # Вспомогательные функции
 async def setup_chat_state(state: FSMContext, chat_id: int, partner_id: int):
@@ -27,27 +31,11 @@ async def setup_chat_state(state: FSMContext, chat_id: int, partner_id: int):
     await state.set_state(AnonymousChatting.chatting)
     await state.update_data(chat_id=chat_id, partner_id=partner_id)
 
-async def send_message_to_partner(bot, partner_tg_id: int, content_type: str, content, caption=None, reply_to_message_id=None):
-    """Отправляет сообщение партнеру в зависимости от типа контента"""
-    try:
-        if content_type == "text":
-            await bot.send_message(partner_tg_id, content, reply_to_message_id=reply_to_message_id)
-        elif content_type == "photo":
-            await bot.send_photo(partner_tg_id, content, caption=caption, reply_to_message_id=reply_to_message_id)
-        elif content_type == "video":
-            await bot.send_video(partner_tg_id, content, caption=caption, reply_to_message_id=reply_to_message_id)
-        elif content_type == "voice":
-            await bot.send_voice(partner_tg_id, content, reply_to_message_id=reply_to_message_id)
-        elif content_type == "document":
-            await bot.send_document(partner_tg_id, content, caption=caption, reply_to_message_id=reply_to_message_id)
-        elif content_type == "audio":
-            await bot.send_audio(partner_tg_id, content, caption=caption, reply_to_message_id=reply_to_message_id)
-        elif content_type == "sticker":
-            await bot.send_sticker(partner_tg_id, content, reply_to_message_id=reply_to_message_id)
-        return True
-    except Exception as e:
-        print(f"Ошибка при отправке {content_type}: {e}")
-        return False
+async def get_partner_info(db, chat: AnonymousChat, user_id: int) -> Tuple[int, Optional[User]]:
+    """Получает информацию о партнере в чате"""
+    partner_id = chat.user2_id if chat.user1_id == user_id else chat.user1_id
+    partner = db.query(User).filter(User.id == partner_id).first()
+    return partner_id, partner
 
 # Поиск собеседника
 @router.message(F.text == "🔍 Найти собеседника")
@@ -75,35 +63,88 @@ async def cmd_find_chat(message: types.Message, state: FSMContext):
         return
 
     dbg(f"Запуск поиска собеседника для пользователя {user.id}", "HANDLER")
-    await message.answer(
-        "Ищем подходящего собеседника с помощью ИИ... Пожалуйста, подожди.",
+    search_message = await message.answer(
+        "Ищем подходящего собеседника... Пожалуйста, подожди.",
         reply_markup=get_cancel_search_keyboard()
     )
     await state.set_state(AnonymousChatting.waiting)
+    # Сохраняем ID сообщения для последующего редактирования
+    await state.update_data(search_message_id=search_message.message_id)
 
-    partner = await find_available_chat_partner(db, user.id)
+    partner, alternative_partners, result_message = await find_available_chat_partner(db, user.id)
     
     if partner:
         dbg(f"Найден собеседник: {partner.id} для пользователя {user.id}", "HANDLER")
+        
+        # Проверяем, требуется ли подтверждение для чата с пользователем с низким рейтингом
+        if "низким рейтингом" in result_message:
+            dbg(f"Требуется подтверждение для чата с пользователем с низким рейтингом", "HANDLER")
+            # Сохраняем данные о партнере в состоянии
+            await state.update_data(pending_partner_id=partner.id)
+            
+            # Редактируем сообщение о поиске
+            await message.bot.edit_message_text(
+                "Найден собеседник с низким рейтингом. Хотите начать чат с этим пользователем?",
+                chat_id=message.chat.id,
+                message_id=search_message.message_id,
+                reply_markup=get_confirm_chat_keyboard()
+            )
+            await state.set_state(AnonymousChatting.confirming)
+            return
+        
+        # Создаем чат и начинаем общение
         chat = create_chat(db, user.id, partner.id)
         dbg(f"Создан чат ID: {chat.id}", "HANDLER")
         
-        await message.answer(
+        # Редактируем сообщение о поиске
+        await message.bot.edit_message_text(
             "Собеседник найден! Теперь вы можете общаться анонимно.",
+            chat_id=message.chat.id,
+            message_id=search_message.message_id,
             reply_markup=get_chat_inline_keyboard()
         )
-        await message.bot.send_message(
-            partner.tg_id,
-            "Собеседник найден! Теперь вы можете общаться анонимно.",
-            reply_markup=get_chat_inline_keyboard()
-        )
-        await setup_chat_state(state, chat.id, partner.id)
+        
+        try:
+            # Отправляем сообщение партнеру
+            await message.bot.send_message(
+                partner.tg_id,
+                "Собеседник найден! Теперь вы можете общаться анонимно.",
+                reply_markup=get_chat_inline_keyboard()
+            )
+            
+            # Устанавливаем состояние чата для обоих пользователей
+            await setup_chat_state(state, chat.id, partner.id)
+            
+            # Устанавливаем состояние чата для партнера
+            partner_state = FSMContext(message.bot.storage, partner.tg_id, partner.tg_id)
+            await setup_chat_state(partner_state, chat.id, user.id)
+            
+            # Обновляем кэш активных чатов
+            from handlers.chat_message_handler import active_chat_cache
+            current_time = time.time()
+            active_chat_cache[user.id] = (chat, current_time)
+            active_chat_cache[partner.id] = (chat, current_time)
+            
+        except Exception as e:
+            dbg(f"Ошибка при отправке сообщения партнеру: {e}", "CHAT_ERROR")
+            # Если не удалось отправить сообщение партнеру, завершаем чат
+            end_chat(db, chat.id)
+            await message.bot.edit_message_text(
+                "Не удалось отправить сообщение партнеру. Попробуйте найти другого собеседника.",
+                chat_id=message.chat.id,
+                message_id=search_message.message_id,
+                reply_markup=get_main_inline_keyboard()
+            )
+            await state.clear()
     else:
-        dbg(f"Для пользователя {user.id} не найдено собеседников", "HANDLER")
-        await message.answer(
-            "Пока нет доступных собеседников. Мы уведомим тебя, когда кто-то появится."
+        dbg(f"Для пользователя {user.id} не найдено собеседников: {result_message}", "HANDLER")
+        # Редактируем сообщение о поиске
+        await message.bot.edit_message_text(
+            result_message or "Пока нет доступных собеседников. Мы уведомим тебя, когда кто-то появится.",
+            chat_id=message.chat.id,
+            message_id=search_message.message_id,
+            reply_markup=get_main_inline_keyboard()
         )
-
 
 # Обработчик для сообщений в чате и автоматической установки состояния
 @router.message()
@@ -130,186 +171,22 @@ async def handle_all_messages(message: types.Message, state: FSMContext):
         # Устанавливаем состояние чата
         partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
         await setup_chat_state(state, chat.id, partner_id)
+        
+        # Получаем партнера из базы данных
+        partner = db.query(User).filter(User.id == partner_id).first()
+        if not partner:
+            dbg(f"Партнер не найден, завершаем чат {chat.id}", "HANDLER")
+            await message.answer("Произошла ошибка. Чат завершен.")
+            end_chat(db, chat.id)
+            await state.clear()
+            return
 
         # Обрабатываем текущее сообщение как сообщение в чате
         dbg(f"Передаем сообщение на обработку в чат", "HANDLER")
         await process_chat_message(message, state)
 
-# Функция для обработки сообщений в чате
-async def process_chat_message(message: types.Message, state: FSMContext):
-    dbg(f"Обработка сообщения в чате от пользователя {message.from_user.id}", "CHAT")
-    db = next(get_db())
-    user = get_user_by_tg_id(db, message.from_user.id)
-    chat = get_active_chat(db, user.id)
-
-    if not chat:
-        dbg(f"У пользователя {user.id} нет активного чата", "CHAT")
-        await message.answer(
-            "У тебя нет активного чата. Хочешь найти собеседника?",
-            reply_markup=get_main_inline_keyboard()
-        )
-        await state.clear()
-        return
-
-    partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
-    partner = db.query(User).filter(User.id == partner_id).first()
-    dbg(f"Партнер пользователя {user.id} - пользователь {partner_id}", "CHAT")
-
-    if not partner:
-        dbg(f"Партнер не найден, завершаем чат {chat.id}", "CHAT")
-        await message.answer("Произошла ошибка. Чат завершен.")
-        end_chat(db, chat.id)
-        await state.clear()
-        return
-
-    # Показываем эффект набора текста партнеру
-    try:
-        await message.bot.send_chat_action(partner.tg_id, "typing")
-        dbg(f"Отправлен эффект набора текста пользователю {partner.tg_id}", "CHAT")
-    except Exception as e:
-        dbg(f"Ошибка при отправке эффекта набора текста: {e}", "CHAT_ERROR")
-
-    try:
-        # Увеличиваем счетчик сообщений
-        increment_messages_count(db, chat.id)
-        dbg(f"Увеличен счетчик сообщений в чате {chat.id}", "CHAT")
-
-        # Проверяем, является ли сообщение ответом
-        reply_to_message_id = None
-        if message.reply_to_message:
-            # Получаем ID оригинального сообщения партнера
-            original_message_id = message.reply_to_message.message_id
-            dbg(f"Сообщение является ответом на сообщение ID: {original_message_id}", "CHAT")
-            if original_message_id in message_mapping:
-                reply_to_message_id = message_mapping[original_message_id]
-                dbg(f"Найдено соответствие для ответа: {reply_to_message_id}", "CHAT")
-            else:
-                dbg(f"Не найдено соответствие для ответа на сообщение ID: {original_message_id}", "CHAT")
-
-        if message.text:
-            # Задержка в зависимости от длины текста
-            typing_delay = min(len(message.text) * 0.05, 3.0)  # Максимум 3 секунды
-            await asyncio.sleep(typing_delay)
-            dbg(f"Отправка текстового сообщения пользователю {partner.tg_id}", "CHAT")
-            sent_message = await message.bot.send_message(
-                partner.tg_id,
-                message.text,
-                reply_to_message_id=reply_to_message_id
-            )
-            # Сохраняем соответствие ID сообщений
-            message_mapping[message.message_id] = sent_message.message_id
-            dbg(f"Сохранено соответствие ID: {message.message_id} -> {sent_message.message_id}", "CHAT")
-        elif message.photo:
-            try:
-                await message.bot.send_chat_action(partner.tg_id, "upload_photo")
-                await asyncio.sleep(1.0)
-                sent_message = await message.bot.send_photo(
-                    partner.tg_id,
-                    message.photo[-1].file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-            except Exception as e:
-                print(f"Ошибка при отправке фото: {e}")
-                sent_message = await message.bot.send_photo(
-                    partner.tg_id,
-                    message.photo[-1].file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-        elif message.video:
-            try:
-                await message.bot.send_chat_action(partner.tg_id, "upload_video")
-                await asyncio.sleep(1.0)
-                sent_message = await message.bot.send_video(
-                    partner.tg_id,
-                    message.video.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-            except Exception as e:
-                print(f"Ошибка при отправке видео: {e}")
-                sent_message = await message.bot.send_video(
-                    partner.tg_id,
-                    message.video.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-        elif message.voice:
-            try:
-                await message.bot.send_chat_action(partner.tg_id, "record_voice")
-                await asyncio.sleep(0.5)
-                sent_message = await message.bot.send_voice(
-                    partner.tg_id,
-                    message.voice.file_id,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-            except Exception as e:
-                print(f"Ошибка при отправке голосового сообщения: {e}")
-                sent_message = await message.bot.send_voice(
-                    partner.tg_id,
-                    message.voice.file_id,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-        elif message.document:
-            try:
-                await message.bot.send_chat_action(partner.tg_id, "upload_document")
-                await asyncio.sleep(1.0)
-                sent_message = await message.bot.send_document(
-                    partner.tg_id,
-                    message.document.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-            except Exception as e:
-                print(f"Ошибка при отправке документа: {e}")
-                sent_message = await message.bot.send_document(
-                    partner.tg_id,
-                    message.document.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-        elif message.audio:
-            try:
-                await message.bot.send_chat_action(partner.tg_id, "upload_voice")
-                await asyncio.sleep(1.0)
-                sent_message = await message.bot.send_audio(
-                    partner.tg_id,
-                    message.audio.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-            except Exception as e:
-                print(f"Ошибка при отправке аудио: {e}")
-                sent_message = await message.bot.send_audio(
-                    partner.tg_id,
-                    message.audio.file_id,
-                    caption=message.caption,
-                    reply_to_message_id=reply_to_message_id
-                )
-                message_mapping[message.message_id] = sent_message.message_id
-        elif message.sticker:
-            sent_message = await message.bot.send_sticker(
-                partner.tg_id,
-                message.sticker.file_id,
-                reply_to_message_id=reply_to_message_id
-            )
-            message_mapping[message.message_id] = sent_message.message_id
-    except Exception as e:
-        print(f"Ошибка при отправке сообщения: {e}")
-        await message.answer("Не удалось отправить сообщение собеседнику.")
-
 # Обработчики для inline кнопок
-@router.callback_query(F.data == "request_deanon")
+@router.callback_query(F.data == REQUEST_DEANON)
 async def inline_deanon_request(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -317,7 +194,7 @@ async def inline_deanon_request(callback: types.CallbackQuery, state: FSMContext
     user = get_user_by_tg_id(db, callback.from_user.id)
     chat = get_active_chat(db, user.id)
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя нет активного чата.",
             reply_markup=get_main_inline_keyboard()
         )
@@ -328,14 +205,15 @@ async def inline_deanon_request(callback: types.CallbackQuery, state: FSMContext
     if not deanon_request:
         deanon_request = create_deanon_request(db, chat.id)
 
-    partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
-    partner = db.query(User).filter(User.id == partner_id).first()
+    partner_id, partner = await get_partner_info(db, chat, user.id)
     user_position = 1 if chat.user1_id == user.id else 2
     update_deanon_approval(db, deanon_request.id, user_position, True)
 
-    await callback.message.answer(
-        "Ты отправил запрос на раскрытие личности. Ожидаем ответа собеседника."
+    await callback.message.edit_text(
+        "Ты отправил запрос на раскрытие личности. Ожидаем ответа собеседника.",
+        reply_markup=get_chat_inline_keyboard()
     )
+    
     if partner:
         await callback.bot.send_message(
             partner.tg_id,
@@ -343,7 +221,7 @@ async def inline_deanon_request(callback: types.CallbackQuery, state: FSMContext
             reply_markup=get_deanon_keyboard()
         )
 
-@router.callback_query(F.data == "end_chat")
+@router.callback_query(F.data == END_CHAT)
 async def inline_end_chat(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -351,35 +229,51 @@ async def inline_end_chat(callback: types.CallbackQuery, state: FSMContext):
     user = get_user_by_tg_id(db, callback.from_user.id)
     chat = get_active_chat(db, user.id)
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя нет активного чата.",
             reply_markup=get_main_inline_keyboard()
         )
         await state.clear()
         return
 
-    partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
-    partner = db.query(User).filter(User.id == partner_id).first()
+    partner_id, partner = await get_partner_info(db, chat, user.id)
 
     # Очищаем соответствия ID сообщений для этого чата
-    global message_mapping
-    # Создаем новый словарь без сообщений из этого чата
-    message_mapping = {}
+    clear_message_mapping_for_chat(chat.id)
 
+    # Завершаем чат
     end_chat(db, chat.id)
-    await callback.message.answer(
+    
+    # Очищаем кэш активных чатов
+    from handlers.chat_message_handler import active_chat_cache
+    active_chat_cache.pop(user.id, None)
+    if partner:
+        active_chat_cache.pop(partner.id, None)
+    
+    # Обновляем сообщения
+    await callback.message.edit_text(
         "Чат завершен. Хочешь найти нового собеседника?",
         reply_markup=get_main_inline_keyboard()
     )
+    
     if partner:
-        await callback.bot.send_message(
-            partner.tg_id,
-            "Собеседник завершил чат. Хочешь найти нового собеседника?",
-            reply_markup=get_main_inline_keyboard()
-        )
+        try:
+            await callback.bot.send_message(
+                partner.tg_id,
+                "Собеседник завершил чат. Хочешь найти нового собеседника?",
+                reply_markup=get_main_inline_keyboard()
+            )
+            
+            # Очищаем состояние партнера
+            partner_state = FSMContext(callback.bot.storage, partner.tg_id, partner.tg_id)
+            await partner_state.clear()
+        except Exception as e:
+            dbg(f"Ошибка при отправке сообщения партнеру о завершении чата: {e}", "CHAT_ERROR")
+    
+    # Очищаем состояние текущего пользователя
     await state.clear()
 
-@router.callback_query(F.data == "deanon_approve")
+@router.callback_query(F.data == DEANON_APPROVE)
 async def inline_deanon_approve(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -387,20 +281,20 @@ async def inline_deanon_approve(callback: types.CallbackQuery, state: FSMContext
     user = get_user_by_tg_id(db, callback.from_user.id)
     chat = get_active_chat(db, user.id)
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя нет активного чата.",
             reply_markup=get_main_inline_keyboard()
         )
         await state.clear()
         return
 
-    partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
-    partner = db.query(User).filter(User.id == partner_id).first()
+    partner_id, partner = await get_partner_info(db, chat, user.id)
     user_position = 1 if chat.user1_id == user.id else 2
     deanon_request = get_deanon_request(db, chat.id)
     if not deanon_request:
-        await callback.message.answer(
-            "Запрос на раскрытие личности не найден."
+        await callback.message.edit_text(
+            "Запрос на раскрытие личности не найден.",
+            reply_markup=get_chat_inline_keyboard()
         )
         await state.set_state(AnonymousChatting.chatting)
         return
@@ -408,94 +302,87 @@ async def inline_deanon_approve(callback: types.CallbackQuery, state: FSMContext
     update_deanon_approval(db, deanon_request.id, user_position, True)
     # Получаем обновленный объект из базы
     deanon_request = get_deanon_request(db, chat.id)
+    
     if deanon_request.user1_approved and deanon_request.user2_approved:
-        try:
-            # Показываем эффект загрузки фото
-            await callback.bot.send_chat_action(callback.from_user.id, "upload_photo")
-            if partner:
-                await callback.bot.send_chat_action(partner.tg_id, "upload_photo")
-            await asyncio.sleep(1.0)
-        except Exception as e:
-            print(f"Ошибка при отправке эффекта загрузки фото: {e}")
-
-        user1 = db.query(User).filter(User.id == chat.user1_id).first()
-        user2 = db.query(User).filter(User.id == chat.user2_id).first()
-
-        profile_caption_1 = (
-            f"Профиль собеседника:\n"
-            f"Имя: {user1.first_name}\n"
-            f"Возраст: {user1.age}\n"
-            f"Город: {user1.city}\n"
-            f"О себе: {user1.bio}\n"
-            f"Интересы: {user1.tags}\n"
-            f"Telegram: [Открыть профиль](tg://user?id={user1.tg_id})"
-        )
-        profile_caption_2 = (
-            f"Профиль собеседника:\n"
-            f"Имя: {user2.first_name}\n"
-            f"Возраст: {user2.age}\n"
-            f"Город: {user2.city}\n"
-            f"О себе: {user2.bio}\n"
-            f"Интересы: {user2.tags}\n"
-            f"Telegram: [Открыть профиль](tg://user?id={user2.tg_id})"
-        )
-
-        try:
-            # user1 -> user2
-            if user1.photo_id and user2:
-                await callback.bot.send_photo(
-                    user2.tg_id,
-                    user1.photo_id,
-                    caption=profile_caption_1,
-                    parse_mode="Markdown"
-                )
-            elif user2:
-                await callback.bot.send_message(
-                    user2.tg_id,
-                    profile_caption_1,
-                    parse_mode="Markdown"
-                )
-
-            # user2 -> user1
-            if user2.photo_id and user1:
-                await callback.bot.send_photo(
-                    user1.tg_id,
-                    user2.photo_id,
-                    caption=profile_caption_2,
-                    parse_mode="Markdown"
-                )
-            elif user1:
-                await callback.bot.send_message(
-                    user1.tg_id,
-                    profile_caption_2,
-                    parse_mode="Markdown"
-                )
-
-            # Отправляем финальные сообщения
-            if user1:
-                await callback.bot.send_message(
-                    user1.tg_id,
-                    "Личности раскрыты! Теперь вы можете продолжить общение.",
-                    reply_markup=get_chat_inline_keyboard()
-                )
-            if user2 and user1.tg_id != callback.from_user.id:
-                await callback.bot.send_message(
-                    user2.tg_id,
-                    "Личности раскрыты! Теперь вы можете продолжить общение.",
-                    reply_markup=get_chat_inline_keyboard()
-                )
-        except Exception as e:
-            print(f"Ошибка при раскрытии личности: {e}")
-            await callback.message.answer(
-                "Произошла ошибка при раскрытии личности. Попробуйте еще раз."
-            )
+        await process_deanon_reveal(callback, chat, db)
     else:
-        await callback.message.answer(
-            "Ты согласился на раскрытие личности. Ожидаем ответа собеседника."
+        await callback.message.edit_text(
+            "Ты согласился на раскрытие личности. Ожидаем ответа собеседника.",
+            reply_markup=get_chat_inline_keyboard()
         )
+    
     await state.set_state(AnonymousChatting.chatting)
 
-@router.callback_query(F.data == "deanon_reject")
+async def process_deanon_reveal(callback: types.CallbackQuery, chat: AnonymousChat, db):
+    """Обрабатывает раскрытие личностей пользователей"""
+    try:
+        # Показываем эффект загрузки фото
+        user1 = db.query(User).filter(User.id == chat.user1_id).first()
+        user2 = db.query(User).filter(User.id == chat.user2_id).first()
+        
+        if user1:
+            await callback.bot.send_chat_action(user1.tg_id, "upload_photo")
+        if user2:
+            await callback.bot.send_chat_action(user2.tg_id, "upload_photo")
+        await asyncio.sleep(1.0)
+        
+        # Формируем профили пользователей
+        profile1 = format_user_profile(user1)
+        profile2 = format_user_profile(user2)
+        
+        # Отправляем профили пользователям
+        await send_profile_to_user(callback.bot, user1, user2, profile2)
+        await send_profile_to_user(callback.bot, user2, user1, profile1)
+        
+        # Отправляем финальные сообщения
+        final_message = "Личности раскрыты! Теперь вы можете продолжить общение."
+        if user1:
+            await callback.bot.send_message(
+                user1.tg_id, final_message, reply_markup=get_chat_inline_keyboard()
+            )
+        if user2 and user1.tg_id != callback.from_user.id:
+            await callback.bot.send_message(
+                user2.tg_id, final_message, reply_markup=get_chat_inline_keyboard()
+            )
+    except Exception as e:
+        dbg(f"Ошибка при раскрытии личности: {e}", "CHAT_ERROR")
+        await callback.message.edit_text(
+            "Произошла ошибка при раскрытии личности. Попробуйте еще раз.",
+            reply_markup=get_chat_inline_keyboard()
+        )
+
+def format_user_profile(user: User) -> str:
+    """Форматирует профиль пользователя для отображения"""
+    return (
+        f"Профиль собеседника:\n"
+        f"Имя: {user.first_name}\n"
+        f"Возраст: {user.age}\n"
+        f"Город: {user.city}\n"
+        f"О себе: {user.bio}\n"
+        f"Интересы: {user.tags}\n"
+        f"Telegram: [Открыть профиль](tg://user?id={user.tg_id})"
+    )
+
+async def send_profile_to_user(bot, recipient: User, sender: User, profile_text: str):
+    """Отправляет профиль пользователя получателю"""
+    if not recipient:
+        return
+        
+    if sender and sender.photo_id:
+        await bot.send_photo(
+            recipient.tg_id,
+            sender.photo_id,
+            caption=profile_text,
+            parse_mode="Markdown"
+        )
+    else:
+        await bot.send_message(
+            recipient.tg_id,
+            profile_text,
+            parse_mode="Markdown"
+        )
+
+@router.callback_query(F.data == DEANON_REJECT)
 async def inline_deanon_reject(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -503,37 +390,41 @@ async def inline_deanon_reject(callback: types.CallbackQuery, state: FSMContext)
     user = get_user_by_tg_id(db, callback.from_user.id)
     chat = get_active_chat(db, user.id)
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя нет активного чата.",
             reply_markup=get_main_inline_keyboard()
         )
         await state.clear()
         return
 
-    partner_id = chat.user2_id if chat.user1_id == user.id else chat.user1_id
-    partner = db.query(User).filter(User.id == partner_id).first()
+    partner_id, partner = await get_partner_info(db, chat, user.id)
     user_position = 1 if chat.user1_id == user.id else 2
     deanon_request = get_deanon_request(db, chat.id)
     if not deanon_request:
-        await callback.message.answer(
-            "Запрос на раскрытие личности не найден."
+        await callback.message.edit_text(
+            "Запрос на раскрытие личности не найден.",
+            reply_markup=get_chat_inline_keyboard()
         )
         await state.set_state(AnonymousChatting.chatting)
         return
 
     update_deanon_approval(db, deanon_request.id, user_position, False)
-    await callback.message.answer(
-        "Ты отказался от раскрытия личности."
+    await callback.message.edit_text(
+        "Ты отказался от раскрытия личности.",
+        reply_markup=get_chat_inline_keyboard()
     )
+    
     if partner:
         await callback.bot.send_message(
             partner.tg_id,
-            "Собеседник отказался от раскрытия личности."
+            "Собеседник отказался от раскрытия личности.",
+            reply_markup=get_chat_inline_keyboard()
         )
+    
     await state.set_state(AnonymousChatting.chatting)
 
 # Обработчик для поиска нового собеседника
-@router.callback_query(F.data == "find_chat")
+@router.callback_query(F.data == FIND_CHAT)
 async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -543,7 +434,7 @@ async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
     # Проверяем, есть ли у пользователя активный чат
     active_chat = get_active_chat(db, user.id)
     if active_chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя уже есть активный чат. Сначала завершите текущий чат.",
             reply_markup=get_chat_inline_keyboard()
         )
@@ -553,30 +444,31 @@ async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
 
     # Проверяем, активен ли профиль пользователя
     if not user.is_active:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Твой профиль неактивен. Активируй его в настройках профиля.",
             reply_markup=get_profile_edit_keyboard()
         )
         return
 
     # Ищем собеседника
-    await callback.message.answer(
+    await callback.message.edit_text(
         "Ищем собеседника...",
         reply_markup=get_cancel_search_keyboard()
     )
     await state.set_state(AnonymousChatting.waiting)
 
-    partner = find_available_chat_partner(db, user.id)
+    partner, alternative_partners, message = await find_available_chat_partner(db, user.id)
     if not partner:
-        await callback.message.answer(
-            "Пока нет доступных собеседников. Мы уведомим тебя, когда кто-то появится."
+        await callback.message.edit_text(
+            message or "Пока нет доступных собеседников. Мы уведомим тебя, когда кто-то появится.",
+            reply_markup=get_main_inline_keyboard()
         )
         return
 
     # Создаем чат
     chat = create_chat(db, user.id, partner.id)
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Произошла ошибка при создании чата. Попробуйте позже.",
             reply_markup=get_main_inline_keyboard()
         )
@@ -587,7 +479,7 @@ async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
     await setup_chat_state(state, chat.id, partner.id)
 
     # Отправляем сообщения обоим пользователям
-    await callback.message.answer(
+    await callback.message.edit_text(
         "Собеседник найден! Теперь вы можете общаться анонимно.",
         reply_markup=get_chat_inline_keyboard()
     )
@@ -598,9 +490,19 @@ async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
             "Собеседник найден! Теперь вы можете общаться анонимно.",
             reply_markup=get_chat_inline_keyboard()
         )
+        # Устанавливаем состояние чата для партнера
+        partner_state = FSMContext(callback.bot.storage, partner.tg_id, partner.tg_id)
+        await setup_chat_state(partner_state, chat.id, user.id)
+        
+        # Обновляем кэш активных чатов
+        from handlers.chat_message_handler import active_chat_cache
+        current_time = time.time()
+        active_chat_cache[user.id] = (chat, current_time)
+        active_chat_cache[partner.id] = (chat, current_time)
+        
     except Exception as e:
-        print(f"Ошибка при отправке сообщения партнеру: {e}")
-        await callback.message.answer(
+        dbg(f"Ошибка при отправке сообщения партнеру: {e}", "CHAT_ERROR")
+        await callback.message.edit_text(
             "Произошла ошибка при подключении к собеседнику. Попробуйте найти другого.",
             reply_markup=get_main_inline_keyboard()
         )
@@ -608,7 +510,7 @@ async def find_new_chat(callback: types.CallbackQuery, state: FSMContext):
         await state.clear()
 
 # Обработчик для отправки информации о чате
-@router.callback_query(F.data == "chat_info")
+@router.callback_query(F.data == CHAT_INFO)
 async def chat_info(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
@@ -617,7 +519,7 @@ async def chat_info(callback: types.CallbackQuery, state: FSMContext):
     chat = get_active_chat(db, user.id)
 
     if not chat:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "У тебя нет активного чата.",
             reply_markup=get_main_inline_keyboard()
         )
@@ -637,7 +539,7 @@ async def chat_info(callback: types.CallbackQuery, state: FSMContext):
         f"💬 Количество сообщений: {chat.messages_count}\n"
     )
 
-    await callback.message.answer(
+    await callback.message.edit_text(
         info_text,
         reply_markup=get_chat_inline_keyboard()
     )
@@ -657,16 +559,40 @@ async def chat_tips(callback: types.CallbackQuery):
         "6️⃣ Если чувствуете взаимную симпатию, предложите раскрыть личности\n"
     )
 
-    await callback.message.answer(tips_text, reply_markup=get_chat_inline_keyboard())
+    await callback.message.edit_text(
+        tips_text,
+        reply_markup=get_chat_inline_keyboard()
+    )
 
 # Обработчик для отмены поиска собеседника через сообщение
 @router.message(AnonymousChatting.waiting)
 async def cancel_search_message(message: types.Message, state: FSMContext):
     if message.text == "Отменить поиск" or message.text == "/cancel":
-        await message.answer(
-            "Поиск собеседника отменен.",
-            reply_markup=get_main_inline_keyboard()
-        )
+        data = await state.get_data()
+        search_message_id = data.get("search_message_id")
+        
+        if search_message_id:
+            try:
+                await message.bot.edit_message_text(
+                    "Поиск собеседника отменен.",
+                    chat_id=message.chat.id,
+                    message_id=search_message_id,
+                    reply_markup=get_main_inline_keyboard()
+                )
+                # Удаляем сообщение пользователя с командой отмены
+                await message.delete()
+            except Exception as e:
+                dbg(f"Ошибка при редактировании сообщения: {e}", "CHAT_ERROR")
+                await message.answer(
+                    "Поиск собеседника отменен.",
+                    reply_markup=get_main_inline_keyboard()
+                )
+        else:
+            await message.answer(
+                "Поиск собеседника отменен.",
+                reply_markup=get_main_inline_keyboard()
+            )
+        
         await state.clear()
     else:
         await message.answer(
@@ -674,20 +600,120 @@ async def cancel_search_message(message: types.Message, state: FSMContext):
             reply_markup=get_cancel_search_keyboard()
         )
 
+# Обработчик для подтверждения чата с пользователем с низким рейтингом
+@router.callback_query(F.data == CONFIRM_CHAT)
+async def confirm_chat_with_low_rating(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    # Получаем данные о партнере из состояния
+    data = await state.get_data()
+    partner_id = data.get("pending_partner_id")
+    
+    if not partner_id:
+        await callback.message.edit_text(
+            "Произошла ошибка. Попробуйте найти собеседника снова.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+        return
+    
+    db = next(get_db())
+    user = get_user_by_tg_id(db, callback.from_user.id)
+    partner = db.query(User).filter(User.id == partner_id).first()
+    
+    if not partner:
+        await callback.message.edit_text(
+            "Партнер больше недоступен. Попробуйте найти другого собеседника.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Проверяем, не находится ли партнер уже в чате
+    partner_chat = get_active_chat(db, partner.id)
+    if partner_chat:
+        await callback.message.edit_text(
+            "Партнер уже находится в чате с другим пользователем. Попробуйте найти другого собеседника.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Создаем чат
+    chat = create_chat(db, user.id, partner.id)
+    if not chat:
+        await callback.message.edit_text(
+            "Произошла ошибка при создании чата. Попробуйте позже.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+        return
+    
+    # Редактируем сообщение
+    await callback.message.edit_text(
+        "Вы подтвердили чат с пользователем с низким рейтингом. Теперь вы можете общаться анонимно.",
+        reply_markup=get_chat_inline_keyboard()
+    )
+    
+    try:
+        # Отправляем сообщение партнеру
+        await callback.bot.send_message(
+            partner.tg_id,
+            "Собеседник найден! Теперь вы можете общаться анонимно.",
+            reply_markup=get_chat_inline_keyboard()
+        )
+        
+        # Устанавливаем состояние чата для обоих пользователей
+        await setup_chat_state(state, chat.id, partner.id)
+        
+        # Устанавливаем состояние чата для партнера
+        partner_state = FSMContext(callback.bot.storage, partner.tg_id, partner.tg_id)
+        await setup_chat_state(partner_state, chat.id, user.id)
+        
+        # Обновляем кэш активных чатов
+        from handlers.chat_message_handler import active_chat_cache
+        current_time = time.time()
+        active_chat_cache[user.id] = (chat, current_time)
+        active_chat_cache[partner.id] = (chat, current_time)
+        
+    except Exception as e:
+        dbg(f"Ошибка при отправке сообщения партнеру: {e}", "CHAT_ERROR")
+        # Если не удалось отправить сообщение партнеру, завершаем чат
+        end_chat(db, chat.id)
+        await callback.message.edit_text(
+            "Не удалось отправить сообщение партнеру. Попробуйте найти другого собеседника.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+
+# Обработчик для отклонения чата с пользователем с низким рейтингом
+@router.callback_query(F.data == REJECT_CHAT)
+async def reject_chat_with_low_rating(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    # Очищаем состояние
+    await state.clear()
+    
+    # Редактируем сообщение
+    await callback.message.edit_text(
+        "Вы отклонили чат с пользователем с низким рейтингом. Хотите найти другого собеседника?",
+        reply_markup=get_main_inline_keyboard()
+    )
+
 # Обработчик для отмены поиска собеседника через кнопку
-@router.callback_query(F.data == "cancel_search")
+@router.callback_query(F.data == CANCEL_SEARCH)
 async def cancel_search_button(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
     current_state = await state.get_state()
-    if current_state == AnonymousChatting.waiting.state:
-        await callback.message.answer(
+    if current_state in [AnonymousChatting.waiting.state, AnonymousChatting.confirming.state]:
+        await callback.message.edit_text(
             "Поиск собеседника отменен.",
             reply_markup=get_main_inline_keyboard()
         )
         await state.clear()
     else:
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Ты не в режиме поиска собеседника.",
             reply_markup=get_main_inline_keyboard()
         )

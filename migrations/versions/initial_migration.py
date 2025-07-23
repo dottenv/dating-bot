@@ -30,6 +30,7 @@ def upgrade() -> None:
         sa.Column('city', sa.String(), nullable=True),
         sa.Column('bio', sa.String(), nullable=True),
         sa.Column('photo_id', sa.String(), nullable=True),
+        sa.Column('dating_goal', sa.String(), nullable=True),  # Добавлено поле dating_goal
         sa.Column('is_active', sa.Boolean(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id')
@@ -61,6 +62,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_deanon_requests_id'), 'deanon_requests', ['id'], unique=False)
+    
+    # Таблица user_reports удалена
     # ### end Alembic commands ###
 
 
