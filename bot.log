@@ -1419,3 +1419,103 @@ aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: messa
 2025-07-23 21:59:06,175 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7958736610)
 2025-07-23 21:59:06,440 - aiogram.dispatcher - INFO - Polling stopped for bot @AnonymateLove_bot id=7958736610 - 'Anonymate'
 2025-07-23 21:59:06,442 - __main__ - INFO - Бот остановлен пользователем
+2025-07-23 21:59:15,801 - __main__ - INFO - База данных успешно инициализирована
+2025-07-23 21:59:16,154 - __main__ - INFO - Все обработчики зарегистрированы
+2025-07-23 21:59:16,511 - utils.commands - INFO - Команды бота успешно установлены
+2025-07-23 21:59:16,511 - __main__ - INFO - Бот запущен
+2025-07-23 21:59:16,512 - aiogram.dispatcher - INFO - Start polling
+2025-07-23 21:59:16,600 - aiogram.dispatcher - INFO - Run polling for bot @AnonymateLove_bot id=7958736610 - 'Anonymate'
+2025-07-23 21:59:18,498 - dating_bot - DEBUG - [CHAT] Очищены соответствия ID сообщений для чата 34
+2025-07-23 21:59:18,508 - aiogram.event - INFO - Update id=885341707 is not handled. Duration 358 ms by bot id=7958736610
+2025-07-23 21:59:18,508 - aiogram.event - ERROR - Cause exception while process update id=885341707 by bot id=7958736610
+ImportError: cannot import name 'active_chat_cache' from 'handlers.chat_message_handler' (C:\Users\admin\Documents\dating-bot\handlers\chat_message_handler.py)
+Traceback (most recent call last):
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\dispatcher.py", line 309, in _process_update
+    response = await self.feed_update(bot, update, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\dispatcher.py", line 158, in feed_update
+    response = await self.update.wrap_outer_middleware(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\middlewares\error.py", line 25, in __call__
+    return await handler(event, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\middlewares\user_context.py", line 56, in __call__
+    return await handler(event, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\fsm\middleware.py", line 42, in __call__
+    return await handler(event, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\event\telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\event\handler.py", line 43, in call
+    return await wrapped()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\dispatcher.py", line 276, in _listen_update
+    return await self.propagate_event(update_type=update_type, event=event, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 141, in _wrapped
+    return await self._propagate_event(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        observer=observer, update_type=update_type, event=telegram_event, **data
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 174, in _propagate_event
+    response = await router.propagate_event(update_type=update_type, event=event, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 141, in _wrapped
+    return await self._propagate_event(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        observer=observer, update_type=update_type, event=telegram_event, **data
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\router.py", line 166, in _propagate_event
+    response = await observer.trigger(event, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\event\telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\.venv\Lib\site-packages\aiogram\dispatcher\event\handler.py", line 43, in call
+    return await wrapped()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\admin\Documents\dating-bot\handlers\chat_simple.py", line 248, in inline_end_chat
+    from handlers.chat_message_handler import active_chat_cache
+ImportError: cannot import name 'active_chat_cache' from 'handlers.chat_message_handler' (C:\Users\admin\Documents\dating-bot\handlers\chat_message_handler.py)
+2025-07-23 21:59:24,096 - dating_bot - DEBUG - [START] Получена команда /start от пользователя 665852999
+2025-07-23 21:59:24,099 - dating_bot - DEBUG - [START] Пользователь 665852999 найден, имя: Алексей
+2025-07-23 21:59:24,241 - aiogram.event - INFO - Update id=885341708 is handled. Duration 145 ms by bot id=7958736610
+2025-07-23 21:59:25,636 - dating_bot - DEBUG - [START] Получен запрос на поиск собеседника от пользователя 665852999
+2025-07-23 21:59:28,484 - aiogram.event - INFO - Update id=885341709 is handled. Duration 2951 ms by bot id=7958736610
+2025-07-23 21:59:32,571 - aiogram.event - INFO - Update id=885341710 is handled. Duration 227 ms by bot id=7958736610
+2025-07-23 21:59:34,500 - dating_bot - DEBUG - [START] Получен запрос на поиск собеседника от пользователя 1191253350
+2025-07-23 21:59:37,427 - aiogram.event - INFO - Update id=885341711 is handled. Duration 3033 ms by bot id=7958736610
+2025-07-23 21:59:57,388 - aiogram.event - INFO - Update id=885341712 is handled. Duration 1179 ms by bot id=7958736610
+2025-07-23 21:59:58,561 - aiogram.event - INFO - Update id=885341713 is handled. Duration 1470 ms by bot id=7958736610
+2025-07-23 22:00:05,578 - aiogram.event - INFO - Update id=885341714 is handled. Duration 365 ms by bot id=7958736610
+2025-07-23 22:00:07,659 - aiogram.event - INFO - Update id=885341715 is handled. Duration 383 ms by bot id=7958736610
+2025-07-23 22:00:09,023 - aiogram.event - INFO - Update id=885341716 is handled. Duration 271 ms by bot id=7958736610
+2025-07-23 22:00:10,622 - aiogram.event - INFO - Update id=885341717 is handled. Duration 233 ms by bot id=7958736610
+2025-07-23 22:00:12,864 - aiogram.event - INFO - Update id=885341718 is handled. Duration 605 ms by bot id=7958736610
+2025-07-23 22:00:14,175 - aiogram.event - INFO - Update id=885341719 is handled. Duration 240 ms by bot id=7958736610
+2025-07-23 22:00:16,642 - aiogram.event - INFO - Update id=885341720 is handled. Duration 405 ms by bot id=7958736610
+2025-07-23 22:00:18,402 - aiogram.event - INFO - Update id=885341721 is handled. Duration 261 ms by bot id=7958736610
+2025-07-23 22:00:21,217 - dating_bot - DEBUG - [START] Получен запрос на поиск собеседника от пользователя 1191253350
+2025-07-23 22:00:21,291 - dating_bot - DEBUG - [START] Получен запрос на поиск собеседника от пользователя 665852999
+2025-07-23 22:00:24,158 - aiogram.event - INFO - Update id=885341723 is handled. Duration 2975 ms by bot id=7958736610
+2025-07-23 22:00:24,233 - aiogram.event - INFO - Update id=885341722 is handled. Duration 3142 ms by bot id=7958736610
+2025-07-23 22:00:47,250 - aiogram.dispatcher - INFO - Polling stopped
+2025-07-23 22:00:47,252 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2025-07-23 22:00:47,252 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7958736610)
+2025-07-23 22:00:47,504 - aiogram.dispatcher - INFO - Polling stopped for bot @AnonymateLove_bot id=7958736610 - 'Anonymate'
+2025-07-23 22:00:47,506 - __main__ - INFO - Бот остановлен пользователем
