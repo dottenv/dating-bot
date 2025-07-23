@@ -20,6 +20,7 @@ class User(Base):
     city = Column(String)
     bio = Column(String)
     photo_id = Column(String)
+    dating_goal = Column(String)  # Цель знакомства: отношения, дружба, общение и т.д.
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
 

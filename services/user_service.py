@@ -10,7 +10,8 @@ def create_user(db: Session, tg_id: int, username: str, first_name: str, last_na
         tg_id=tg_id,
         username=username,
         first_name=first_name,
-        last_name=last_name
+        last_name=last_name,
+        is_active=True  # По умолчанию пользователь активен
     )
     db.add(user)
     db.commit()
@@ -25,3 +26,14 @@ def update_user_profile(db: Session, user: User, **kwargs) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+def toggle_user_activity(db: Session, user: User) -> User:
+    """Переключает статус активности пользователя"""
+    user.is_active = not user.is_active
+    db.commit()
+    db.refresh(user)
+    return user
+
+def get_user_activity_status(user: User) -> str:
+    """Возвращает текстовый статус активности пользователя"""
+    return "Активен" if user.is_active else "Неактивен"
