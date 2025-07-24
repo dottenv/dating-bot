@@ -91,6 +91,7 @@ async def main():
         
         dp.callback_query.middleware(AuthMiddleware())
         dp.callback_query.middleware(BanMiddleware())
+        dp.callback_query.middleware(AdminMiddleware())
         dp.callback_query.middleware(NotificationMiddleware())
         dp.callback_query.middleware(LoggingMiddleware())
         

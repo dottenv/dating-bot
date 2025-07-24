@@ -1,6 +1,6 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message
+from aiogram.types import TelegramObject, Message, CallbackQuery
 
 class AdminMiddleware(BaseMiddleware):
     async def __call__(
@@ -17,6 +17,19 @@ class AdminMiddleware(BaseMiddleware):
                 is_admin = data.get('is_admin', False)
                 if not is_admin:
                     await event.answer("У вас нет прав администратора.")
+                    return
+        
+        # Проверяем админские callback_query
+        elif isinstance(event, CallbackQuery) and event.data:
+            admin_callbacks = [
+                'admin_panel', 'admin_updates', 'check_updates', 'apply_updates', 'restart_bot',
+                'admin_broadcast', 'admin_stats', 'admin_users', 'admin_ads', 'admin_settings'
+            ]
+            
+            if event.data in admin_callbacks:
+                is_admin = data.get('is_admin', False)
+                if not is_admin:
+                    await event.answer("Access denied", show_alert=True)
                     return
         
         return await handler(event, data)

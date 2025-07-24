@@ -9,9 +9,8 @@ from database.models import User
 router = Router()
 
 @router.callback_query(F.data == "admin_updates")
-async def updates_menu(callback: CallbackQuery):
-    user = await User.filter(tg_id=callback.from_user.id).first()
-    if not user or not user.is_admin:
+async def updates_menu(callback: CallbackQuery, is_admin: bool = False):
+    if not is_admin:
         await callback.answer("Access denied")
         return
     
@@ -25,9 +24,8 @@ async def updates_menu(callback: CallbackQuery):
     await callback.message.edit_text("🔧 **Update Management**", reply_markup=kb, parse_mode="Markdown")
 
 @router.callback_query(F.data == "check_updates")
-async def check_updates(callback: CallbackQuery):
-    user = await User.filter(tg_id=callback.from_user.id).first()
-    if not user or not user.is_admin:
+async def check_updates(callback: CallbackQuery, is_admin: bool = False):
+    if not is_admin:
         await callback.answer("Access denied")
         return
     
@@ -45,9 +43,8 @@ async def check_updates(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
 @router.callback_query(F.data == "apply_updates")
-async def apply_updates(callback: CallbackQuery):
-    user = await User.filter(tg_id=callback.from_user.id).first()
-    if not user or not user.is_admin:
+async def apply_updates(callback: CallbackQuery, is_admin: bool = False):
+    if not is_admin:
         await callback.answer("Access denied")
         return
     
@@ -64,9 +61,8 @@ async def apply_updates(callback: CallbackQuery):
         await update_service.restart_bot()
 
 @router.callback_query(F.data == "restart_bot")
-async def restart_bot(callback: CallbackQuery):
-    user = await User.filter(tg_id=callback.from_user.id).first()
-    if not user or not user.is_admin:
+async def restart_bot(callback: CallbackQuery, is_admin: bool = False):
+    if not is_admin:
         await callback.answer("Access denied")
         return
     
