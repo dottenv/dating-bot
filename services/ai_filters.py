@@ -12,18 +12,90 @@ except ImportError:
     G4F_AVAILABLE = False
     dbg("g4f не установлен, будет использоваться локальный алгоритм подбора", "AI_WARNING")
 
+def is_gender_orientation_compatible(user1_data: Dict, user2_data: Dict) -> bool:
+    """Проверяет совместимость по полу и ориентации"""
+    # Для общения и дружбы пол и ориентация не критичны
+    goal1 = user1_data.get('dating_goal', '').strip().lower()
+    goal2 = user2_data.get('dating_goal', '').strip().lower()
+    
+    if goal1 in ['общение', 'дружба'] and goal2 in ['общение', 'дружба']:
+        return True
+    
+    gender1 = user1_data.get('gender', '').strip().lower()
+    gender2 = user2_data.get('gender', '').strip().lower()
+    orientation1 = user1_data.get('orientation', '').strip().lower()
+    orientation2 = user2_data.get('orientation', '').strip().lower()
+    
+    if not all([gender1, gender2, orientation1, orientation2]):
+        return False
+    
+    # Гетеро мужчина совместим только с гетеро/би/пан женщиной
+    if gender1 == 'мужской' and orientation1 == 'гетеро':
+        return gender2 == 'женский' and orientation2 in ['гетеро', 'би', 'пан']
+    
+    # Гетеро женщина совместима только с гетеро/би/пан мужчиной
+    if gender1 == 'женский' and orientation1 == 'гетеро':
+        return gender2 == 'мужской' and orientation2 in ['гетеро', 'би', 'пан']
+    
+    # Гомо мужчина совместим только с гомо/би/пан мужчиной
+    if gender1 == 'мужской' and orientation1 == 'гомо':
+        return gender2 == 'мужской' and orientation2 in ['гомо', 'би', 'пан']
+    
+    # Гомо женщина совместима только с гомо/би/пан женщиной
+    if gender1 == 'женский' and orientation1 == 'гомо':
+        return gender2 == 'женский' and orientation2 in ['гомо', 'би', 'пан']
+    
+    # Би/пан люди совместимы с теми, кто может быть заинтересован в их поле
+    if orientation1 in ['би', 'пан']:
+        if gender1 == 'мужской':
+            return orientation2 in ['гетеро', 'би', 'пан'] if gender2 == 'женский' else orientation2 in ['гомо', 'би', 'пан']
+        elif gender1 == 'женский':
+            return orientation2 in ['гетеро', 'би', 'пан'] if gender2 == 'мужской' else orientation2 in ['гомо', 'би', 'пан']
+    
+    # Для "другое" - считаем совместимыми с би/пан
+    if 'другое' in [gender1, gender2, orientation1, orientation2]:
+        return orientation1 in ['би', 'пан', 'другое'] or orientation2 in ['би', 'пан', 'другое']
+    
+    return False
+
+def is_dating_goal_compatible(user1_data: Dict, user2_data: Dict) -> bool:
+    """Проверяет совместимость целей знакомства"""
+    goal1 = user1_data.get('dating_goal', '').strip().lower()
+    goal2 = user2_data.get('dating_goal', '').strip().lower()
+    
+    if not goal1 or not goal2:
+        return False
+    
+    # Совместимые комбинации целей
+    compatible_goals = {
+        'серьезные отношения': ['серьезные отношения'],
+        'дружба': ['дружба', 'общение'],
+        'общение': ['дружба', 'общение', 'встречи'],
+        'встречи': ['встречи', 'общение']
+    }
+    
+    return goal2 in compatible_goals.get(goal1, [])
+
 # Локальный алгоритм для расчета совместимости
 def calculate_local_compatibility(user1_data: Dict, user2_data: Dict) -> float:
     """Локальный алгоритм расчета совместимости без использования внешних API"""
-    score = 0.5  # Базовая оценка
+    # КРИТИЧЕСКАЯ ПРОВЕРКА: Совместимость по полу и ориентации
+    if not is_gender_orientation_compatible(user1_data, user2_data):
+        return 0.0  # Полная несовместимость
+    
+    # КРИТИЧЕСКАЯ ПРОВЕРКА: Совместимость целей знакомства
+    if not is_dating_goal_compatible(user1_data, user2_data):
+        return 0.0  # Полная несовместимость
+    
+    score = 0.4  # Базовая оценка для совместимых пар
     matches = 0
     total_factors = 0
     
     # Проверка заполненности профилей
-    required_fields = ['first_name', 'age', 'city', 'about', 'tags', 'gender', 'orientation']
+    required_fields = ['first_name', 'age', 'city', 'about', 'tags', 'gender', 'orientation', 'dating_goal']
     for field in required_fields:
         if not user1_data.get(field) or not user2_data.get(field):
-            return 0.3  # Неполный профиль получает низкую оценку
+            return 0.1  # Неполный профиль получает очень низкую оценку
     
     # Совпадение по городу
     if user1_data.get('city') and user2_data.get('city'):
@@ -107,7 +179,7 @@ async def analyze_compatibility(user1_data: Dict, user2_data: Dict) -> float:
 
     try:
         # Пробуем несколько провайдеров, если один не работает
-        providers = [g4f.Provider.DeepAi, g4f.Provider.You, g4f.Provider.Bing]
+        providers = [g4f.Provider.You, g4f.Provider.Bing, g4f.Provider.ChatgptAi]
         
         for provider in providers:
             try:
@@ -206,33 +278,35 @@ async def analyze_user_message(message_text: str) -> Dict[str, Any]:
             block_message = True
             replacement_text = "Сообщение заблокировано из-за нарушения правил. Ваш рейтинг снижен."
     
-    # Проверка на попытки деанона
+    # Проверка на попытки деанона (менее строгая для качественного общения)
     found_deanon_phrases = []
     for phrase in deanon_phrases:
         if phrase in lower_text:
-            is_toxic = True
-            toxicity_score += 0.3
-            rating_change -= 5  # Сильно уменьшаем рейтинг за попытки деанона
+            # Не блокируем сразу, только помечаем как потенциальный деанон
+            toxicity_score += 0.1
+            rating_change -= 2  # Меньше штрафа
             found_deanon_phrases.append(phrase)
     
     if found_deanon_phrases:
         dbg(f"Найдены попытки деанона: {found_deanon_phrases}", "AI")
-        block_message = True
-        replacement_text = "Сообщение заблокировано. Попытки деанона запрещены. Ваш рейтинг снижен."
+        # Не блокируем автоматически - пусть система сама решает на основе качества общения
     
-    # Проверка на попытки получить обнаженку
+    # Проверка на попытки получить обнаженку (с учетом контекста)
     found_nude_phrases = []
+    consent_phrases = ['согласен на 18+', 'хочу 18+', 'можно интим', 'давай 18+']
+    is_consent_message = any(phrase in lower_text for phrase in consent_phrases)
+    
     for phrase in nude_phrases:
-        if phrase in lower_text:
+        if phrase in lower_text and not is_consent_message:
             is_toxic = True
             toxicity_score += 0.4
-            rating_change -= 10  # Очень сильно уменьшаем рейтинг за попытки получить обнаженку
+            rating_change -= 10
             found_nude_phrases.append(phrase)
     
     if found_nude_phrases:
         dbg(f"Найдены попытки получить обнаженку: {found_nude_phrases}", "AI")
         block_message = True
-        replacement_text = "Сообщение заблокировано. Запросы интимных фото или видео запрещены. Ваш рейтинг значительно снижен."
+        replacement_text = "Сообщение заблокировано. Запросы интимных фото или видео запрещены без взаимного согласия. Ваш рейтинг значительно снижен."
     
     # Проверка на позитив
     found_positive_words = []
@@ -263,6 +337,79 @@ async def analyze_user_message(message_text: str) -> Dict[str, Any]:
     dbg(f"Результат анализа сообщения: {result}", "AI")
     return result
     
+async def analyze_report_validity(chat_log: list, reporter_profile: dict, reported_profile: dict) -> dict:
+    """Анализирует обоснованность жалобы на основе переписки"""
+    dbg(f"Анализ обоснованности жалобы от {reporter_profile['first_name']} на {reported_profile['first_name']}", "AI")
+    
+    if not chat_log:
+        return {
+            'is_valid': False,
+            'confidence': 0.0,
+            'reason': 'Нет переписки для анализа',
+            'action': 'ignore'
+        }
+    
+    # Локальный анализ переписки
+    toxic_count = 0
+    total_messages = len(chat_log)
+    reported_messages = [msg for msg in chat_log if msg['user_id'] == reported_profile.get('user_id')]
+    
+    if not reported_messages:
+        return {
+            'is_valid': False,
+            'confidence': 0.0,
+            'reason': 'Нет сообщений от обвиняемого',
+            'action': 'ignore'
+        }
+    
+    # Проверяем сообщения обвиняемого на токсичность
+    for msg in reported_messages:
+        analysis = await analyze_user_message(msg['message'])
+        if analysis['is_toxic'] or analysis['block_message']:
+            toxic_count += 1
+    
+    toxicity_ratio = toxic_count / len(reported_messages) if reported_messages else 0
+    
+    # Определяем обоснованность
+    if toxicity_ratio >= 0.3:  # 30% токсичных сообщений
+        return {
+            'is_valid': True,
+            'confidence': min(toxicity_ratio * 2, 1.0),
+            'reason': f'Обнаружено {toxic_count} токсичных сообщений из {len(reported_messages)}',
+            'action': 'penalize'
+        }
+    elif toxicity_ratio > 0:
+        return {
+            'is_valid': True,
+            'confidence': toxicity_ratio,
+            'reason': f'Обнаружено {toxic_count} нарушений, но мало',
+            'action': 'warning'
+        }
+    else:
+        # Проверяем, не троллит ли жалобщик
+        reporter_messages = [msg for msg in chat_log if msg['user_id'] == reporter_profile.get('user_id')]
+        reporter_toxic = 0
+        
+        for msg in reporter_messages:
+            analysis = await analyze_user_message(msg['message'])
+            if analysis['is_toxic']:
+                reporter_toxic += 1
+        
+        if reporter_toxic > toxic_count:
+            return {
+                'is_valid': False,
+                'confidence': 0.8,
+                'reason': f'Жалобщик сам более токсичен ({reporter_toxic} против {toxic_count})',
+                'action': 'penalize_reporter'
+            }
+        
+        return {
+            'is_valid': False,
+            'confidence': 0.6,
+            'reason': 'Не обнаружено нарушений',
+            'action': 'ignore'
+        }
+
     # Использование G4F временно отключено для стабильности
 
 async def find_best_match(user_data: Dict, candidates: List[Dict]) -> Tuple[Optional[Dict], float]:

@@ -1,61 +1,102 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from tortoise import fields
+from tortoise.models import Model
 
-import datetime
+class User(Model):
+    id = fields.IntField(pk=True)
+    tg_id = fields.BigIntField(unique=True)
+    username = fields.CharField(max_length=64, null=True)
+    registered_at = fields.DatetimeField(auto_now_add=True)
+    is_active = fields.BooleanField(default=True)
+    is_premium = fields.BooleanField(default=False)
+    is_admin = fields.BooleanField(default=False)
+    is_banned = fields.BooleanField(default=False)
+    raiting = fields.IntField(default=100)
 
-Base = declarative_base()
+    # Связь с анкетой 
+    profile: fields.ReverseRelation["Profile"]
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    tg_id = Column(Integer, unique=True, index=True)
-    username = Column(String, unique=True, index=True)
-    first_name = Column(String)
-    last_name = Column(String)
-    age = Column(Integer)
-    tags = Column(String)
-    gender = Column(String)
-    orientation = Column(String)
-    city = Column(String)
-    bio = Column(String)
-    photo_id = Column(String)
-    dating_goal = Column(String)  # Цель знакомства: отношения, дружба, общение и т.д.
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.now)
-    user_rating = Column(Integer, default=100)  # Рейтинг пользователя от 0 до 100, по умолчанию 100
-    profile_completed = Column(Boolean, default=False)  # Флаг, указывающий на полноту заполнения профиля
+    def __str__(self):
+        return f"User({self.tg_id})"
 
 
-class AnonymousChat(Base):
-    __tablename__ = 'chats'
-    id = Column(Integer, primary_key=True, index=True)
-    user1_id = Column(ForeignKey('users.id'))
-    user2_id = Column(ForeignKey('users.id'))
-    start_time = Column(DateTime, default=datetime.datetime.now)
-    messages_count = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
+class Profile(Model):
+    id = fields.IntField(pk=True)
+    user = fields.OneToOneField("models.User", related_name="profile", on_delete=fields.CASCADE)
+    first_name = fields.CharField(max_length=64)
+    last_name = fields.CharField(max_length=64, null=True)
+    age = fields.IntField(null=True)
+    city = fields.CharField(max_length=64, null=True)
+    about = fields.TextField(null=True)
+    tags = fields.CharField(max_length=256, null=True)  # интересы, можно хранить через запятую
+    gender = fields.CharField(max_length=16, null=True)
+    orientation = fields.CharField(max_length=32, null=True)
+    dating_goal = fields.CharField(max_length=64, null=True)
+    photo_id = fields.CharField(max_length=256, null=False)
+    profile_completed = fields.BooleanField(default=False)
 
-    user1 = relationship('User', foreign_keys=[user1_id])
-    user2 = relationship('User', foreign_keys=[user2_id])
+    def __str__(self):
+        return f"Profile({self.first_name}, {self.city})"
 
-class DeanonRequest(Base):
-    __tablename__ = 'deanon_requests'
-    id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(ForeignKey('chats.id'))
-    user1_approved = Column(Boolean, default=False)
-    user2_approved = Column(Boolean, default=False)
-    requested_at = Column(DateTime, default=datetime.datetime.now)
 
-    chat = relationship('AnonymousChat', foreign_keys=[chat_id])
+class Ban(Model):
+    id = fields.IntField(pk=True)
+    user = fields.ForeignKeyField("models.User", related_name="bans", on_delete=fields.CASCADE)
+    banned_by = fields.ForeignKeyField("models.User", related_name="issued_bans", on_delete=fields.SET_NULL, null=True)
+    ban_type = fields.CharField(max_length=16)  # temp, permanent
+    duration_hours = fields.IntField(null=True)  # для временных банов
+    reason = fields.TextField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    expires_at = fields.DatetimeField(null=True)  # когда истекает временный бан
+    is_active = fields.BooleanField(default=True)
+    
+    def __str__(self):
+        return f"Ban({self.user.tg_id}, {self.ban_type})"
 
-class ChatHistory(Base):
-    __tablename__ = 'chat_history'
-    id = Column(Integer, primary_key=True, index=True)
-    user1_id = Column(ForeignKey('users.id'))
-    user2_id = Column(ForeignKey('users.id'))
-    chat_count = Column(Integer, default=1)  # Количество чатов между пользователями
-    last_chat_at = Column(DateTime, default=datetime.datetime.now)
 
-    user1 = relationship('User', foreign_keys=[user1_id])
-    user2 = relationship('User', foreign_keys=[user2_id])
+class Advertisement(Model):
+    id = fields.IntField(pk=True)
+    title = fields.CharField(max_length=128)
+    text = fields.TextField()
+    media_type = fields.CharField(max_length=16, null=True)  # photo, video, document
+    media_file_id = fields.CharField(max_length=256, null=True)
+    buttons = fields.JSONField(default=list)  # [{"text": "...", "url": "..."}]
+    
+    # Настройки
+    audience = fields.CharField(max_length=16, default="all")  # all, premium, regular
+    rounds = fields.IntField(default=1)
+    frequency_hours = fields.IntField(default=24)
+    
+    # Статистика
+    total_sent = fields.IntField(default=0)
+    total_clicks = fields.IntField(default=0)
+    
+    # Мета
+    created_by = fields.ForeignKeyField("models.User", related_name="ads", on_delete=fields.CASCADE)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    is_active = fields.BooleanField(default=True)
+    
+    def __str__(self):
+        return f"Ad({self.title})"
+
+
+class AdClick(Model):
+    id = fields.IntField(pk=True)
+    ad = fields.ForeignKeyField("models.Advertisement", related_name="clicks", on_delete=fields.CASCADE)
+    user = fields.ForeignKeyField("models.User", related_name="ad_clicks", on_delete=fields.CASCADE)
+    button_text = fields.CharField(max_length=128)
+    clicked_at = fields.DatetimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Click({self.ad.title}, {self.user.tg_id})"
+
+
+class PremiumPurchase(Model):
+    id = fields.IntField(pk=True)
+    user = fields.ForeignKeyField("models.User", related_name="purchases", on_delete=fields.CASCADE)
+    stars_amount = fields.IntField()
+    duration_days = fields.IntField()
+    telegram_payment_id = fields.CharField(max_length=256, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Purchase({self.user.tg_id}, {self.stars_amount} stars)"
