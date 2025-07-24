@@ -3,7 +3,7 @@ import os
 import sys
 import shutil
 from datetime import datetime
-from config import GIT_BRANCH, BACKUP_BEFORE_UPDATE
+from config import GIT_BRANCH, BACKUP_BEFORE_UPDATE, GIT_REPO_URL
 
 class UpdateService:
     def __init__(self):
@@ -55,6 +55,14 @@ class UpdateService:
             # Создаем бэкап
             if not await self.create_backup():
                 return {"error": "Backup failed"}
+            
+            # Проверяем настройку remote origin
+            from config import GIT_REPO_URL
+            if GIT_REPO_URL:
+                try:
+                    subprocess.run(["git", "remote", "set-url", "origin", GIT_REPO_URL], cwd=self.repo_path, check=True)
+                except:
+                    subprocess.run(["git", "remote", "add", "origin", GIT_REPO_URL], cwd=self.repo_path)
             
             # Применяем обновления
             subprocess.run(["git", "pull", "origin", GIT_BRANCH], cwd=self.repo_path, check=True)
