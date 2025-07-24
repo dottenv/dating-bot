@@ -4,13 +4,14 @@ from aiogram.filters import Command
 
 from services.update_service import update_service
 from keyboards.profile import create_keyboard
-from config import ADMIN_IDS
+from database.models import User
 
 router = Router()
 
 @router.callback_query(F.data == "admin_updates")
 async def updates_menu(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
+    user = await User.filter(tg_id=callback.from_user.id).first()
+    if not user or not user.is_admin:
         await callback.answer("Access denied")
         return
     
@@ -25,7 +26,8 @@ async def updates_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "check_updates")
 async def check_updates(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
+    user = await User.filter(tg_id=callback.from_user.id).first()
+    if not user or not user.is_admin:
         await callback.answer("Access denied")
         return
     
@@ -44,7 +46,8 @@ async def check_updates(callback: CallbackQuery):
 
 @router.callback_query(F.data == "apply_updates")
 async def apply_updates(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
+    user = await User.filter(tg_id=callback.from_user.id).first()
+    if not user or not user.is_admin:
         await callback.answer("Access denied")
         return
     
@@ -62,7 +65,8 @@ async def apply_updates(callback: CallbackQuery):
 
 @router.callback_query(F.data == "restart_bot")
 async def restart_bot(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
+    user = await User.filter(tg_id=callback.from_user.id).first()
+    if not user or not user.is_admin:
         await callback.answer("Access denied")
         return
     
