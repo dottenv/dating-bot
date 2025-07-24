@@ -22,6 +22,7 @@ async def admin_panel(message: types.Message):
         ("👥 Пользователи", "admin_users"),
         ("🚫 Модерация", "admin_moderation"),
         ("📢 Рассылка", "admin_broadcast"),
+        ("🔧 Updates", "admin_updates"),
         ("⚙️ Настройки", "admin_settings")
     ])
     
@@ -384,6 +385,7 @@ async def admin_back(callback: types.CallbackQuery):
         ("👥 Пользователи", "admin_users"),
         ("🚫 Модерация", "admin_moderation"),
         ("📢 Рассылка", "admin_broadcast"),
+        ("🔧 Updates", "admin_updates"),
         ("⚙️ Настройки", "admin_settings")
     ])
     

@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import sys
+import subprocess
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.exceptions import TelegramAPIError
@@ -15,6 +16,7 @@ from handlers.admin_panel import router as admin_panel_router
 from handlers.ad_broadcast import router as ad_broadcast_router
 from handlers.ad_manager import router as ad_manager_router
 from handlers.premium import router as premium_router
+from handlers.update_manager import router as update_router
 from utils.debug import dbg
 from tortoise import Tortoise
 
@@ -54,6 +56,14 @@ async def main():
             logger.error("Токен бота не найден. Проверьте файл .env")
             sys.exit(1)
             
+        # Выполняем миграции при старте
+        try:
+            subprocess.run(["aerich", "migrate"], check=True)
+            subprocess.run(["aerich", "upgrade"], check=True)
+            logger.info("Database migrations completed")
+        except Exception as e:
+            logger.warning(f"Migration error: {e}")
+        
         # Инициализация Tortoise-ORM
         await Tortoise.init(config=__import__('database.tortoise_config', fromlist=['TORTOISE_ORM']).TORTOISE_ORM)
         logger.info("Tortoise-ORM инициализирована")
@@ -92,6 +102,7 @@ async def main():
         dp.include_router(ad_broadcast_router)
         dp.include_router(ad_manager_router)
         dp.include_router(premium_router)
+        dp.include_router(update_router)
         dp.include_router(assistant_router)
         logger.info("Обработчики и middleware зарегистрированы")
         
